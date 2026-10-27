@@ -193,7 +193,7 @@ def number_checks():
     m = json.loads((config.OUTPUTS / "metrics.json").read_text())
     cands = candidates(m)
     results = []
-    for path in [config.ROOT / "README.md", config.DOCS / "memo.md"]:
+    for path in [config.ROOT / "README.md", config.DOCS / "memo.md", config.DOCS / "INTERVIEW_PREP.md"]:
         unknown, n = untraced_numbers(path.read_text(encoding="utf-8"), cands)
         results.append({"check": f"numbers in {path.name} traced to outputs/metrics.json",
                         "n": n, "unknown": unknown, "passed": not unknown})

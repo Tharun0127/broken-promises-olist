@@ -1,0 +1,421 @@
+# Interview preparation
+
+Rendered from `docs/templates/INTERVIEW_PREP.md.tmpl`. Every result quoted here is filled in from
+`outputs/metrics.json`. Use it to explain, defend and rebuild each part of the project.
+
+How to tell the story in one minute: "I asked whether late deliveries cost Olist reviews and repeat
+customers. Late orders get far more 1-star reviews, but a regression discontinuity at the promise date
+shows that missing it by a day is not the cliff. The damage builds over the next days and lines up with
+the review survey arriving before the parcel. Repeat purchase is too rare to move, so the money at stake
+there is small. So I recommended testing a proactive delay message, and I designed and powered that test."
+
+---
+
+## 1. Data model
+
+### What and why
+
+- Three SQL layers in DuckDB. **Staging** casts types and renames columns, one view per raw file.
+  **Intermediate** builds reusable pieces (one review per order, order totals, the analysis grain).
+  **Marts** answer one question each (funnel, cohorts, RD dataset).
+- Grain: **one row per delivered order** (96,470 rows). Delivered means status `delivered`
+  and a delivery timestamp, because the promise gap needs a real delivery date.
+- Customer = `customer_unique_id`. `customer_id` is new for every order, so it would make every
+  customer look like a one-time buyer.
+
+### Key SQL: order sequence per person (`sql/intermediate/04_int_delivered_orders.sql`)
+
+```sql
+sequenced as (
+    select
+        *,
+        row_number() over (
+            partition by customer_unique_id order by purchased_at, order_id
+        ) as customer_order_number,
+        lag(purchase_date) over (
+            partition by customer_unique_id order by purchased_at, order_id
+        ) as previous_purchase_date
+    from gap
+),
+```
+
+Line by line:
+
+1. `sequenced as (` starts a CTE. Each CTE does one job; this one numbers each person's orders.
+2. `select *` keeps every column from the previous CTE (`gap`), which already has days late.
+3. `row_number() over (...)` is a window function. It numbers rows without collapsing them.
+4. `partition by customer_unique_id` restarts the numbering for each person, not each `customer_id`.
+5. `order by purchased_at, order_id` orders by time. `order_id` breaks ties so the result is deterministic.
+6. `as customer_order_number` names it. Order number 1 is the first order, used for the repeat outcome.
+7. `lag(purchase_date) over (...)` returns the previous row's purchase date within the same person.
+8. Same partition and order, so "previous" means "this person's previous order".
+9. `as previous_purchase_date` is later turned into days since the previous order.
+10. `from gap` reads the CTE above. The chain of CTEs reads top to bottom like a recipe.
+
+### Likely questions
+
+1. **Why `customer_unique_id`?** `customer_id` is generated per order: 93,350 people place
+   96,470 delivered orders but there are as many `customer_id` values as orders. Using it,
+   the repeat rate would be zero by construction.
+2. **Why is the grain delivered orders, not all orders?** The question is about delivery against a promise.
+   Undelivered orders have no delivery date. They stay in the funnel, which uses all orders.
+3. **How did you handle orders with several reviews or items?** One review per order: the latest answered.
+   One category and seller per order: the most expensive item. Both are documented in DECISIONS.md.
+4. **How do you know you did not lose rows silently?** Every exclusion is a step in `int_exclusions` with
+   rows before and after, and the pandas rebuild in `src/verify.py` recomputes the core numbers from raw CSVs.
+5. **Why DuckDB?** It runs SQL on CSV files with no server, is fast on 100k rows, and the same SQL would
+   move to a warehouse like BigQuery or Snowflake with small changes.
+
+### Weak points and honest answers
+
+- *"Most expensive item" is a simplification for multi-item orders.* True. About one order in ten has more
+  than one item. The category is used for slicing, not for the causal estimate.
+- *Same-day orders are not counted as repeats.* A choice. A second order on the same day looks like one
+  shopping session split across sellers. It lowers the repeat rate slightly and is stated.
+- *DuckDB is pinned to one thread.* This trades speed for byte-identical rebuilds. With this data size it
+  costs seconds.
+
+---
+
+## 2. Funnels
+
+### What and why
+
+- Fulfilment funnel: purchased, approved, shipped, delivered, reviewed. 97.0%
+  of orders are delivered, and 99.3% of delivered orders are reviewed.
+- Seller funnel: lead, closed deal, first sale, still selling 90 days after the first sale.
+  10.5% of leads close and 44.7% of closed deals ever sell.
+
+### Key SQL: stage counts with conditional aggregation and GROUPING SETS (`sql/marts/02_mart_fulfilment_funnel.sql`)
+
+```sql
+select
+    case
+        when grouping(purchase_month) = 0 then 'month'
+        when grouping(category_en) = 0 then 'category'
+        else 'overall'
+    end as dimension,
+    count(*)                                  as n_purchased,
+    count(*) filter (where reached_approved)  as n_approved,
+    count(*) filter (where reached_delivered) as n_delivered,
+    median(h_ship_to_deliver) filter (where reached_delivered) as median_h_ship_to_deliver
+from durations
+group by grouping sets ((), (purchase_month), (category_en))
+```
+
+Line by line:
+
+1. `grouping(purchase_month) = 0` is true on rows grouped by month. It labels which breakdown a row is.
+2. The `case` turns that into a readable `dimension` column: month, category or overall.
+3. `count(*)` counts all orders in the group: the top of the funnel.
+4. `count(*) filter (where reached_approved)` is conditional aggregation: count only rows meeting a condition.
+   It is the same as `sum(case when ... then 1 else 0 end)`, but clearer.
+5. Each stage flag is cumulative, set in an earlier CTE, so a delivered order is also counted as approved.
+6. `median(...) filter (...)` takes the median time only over orders that reached that stage.
+7. `group by grouping sets ((), (purchase_month), (category_en))` computes three group-bys in one pass:
+   `()` is the grand total, then by month, then by category.
+
+### Likely questions
+
+1. **Why make stages cumulative?** Some delivered orders have no approval timestamp. They were clearly
+   approved. Without the rule, the funnel would show more deliveries than approvals.
+2. **Why medians for time between stages?** Delivery times have long right tails. One parcel stuck for
+   two months moves the mean a lot and the median hardly at all.
+3. **How did you treat sellers whose 90-day window is not over?** They are censored: counted separately
+   (179 sellers), and left out of the "still selling" denominator.
+4. **Why does the segment breakdown start at closed deal?** Segment is only recorded when a deal closes.
+   Lead counts by segment do not exist, so the column is empty rather than invented.
+5. **What is the biggest leak?** In fulfilment, few orders are lost: most of the gap is cancellations and
+   unavailable items. In seller acquisition the leak is after the deal: most closed sellers never sell.
+
+### Weak points and honest answers
+
+- *The seller funnel is small* (842 closed deals). Rates by origin rest on dozens of sellers
+  and should be read as directions, not precise numbers.
+- *"Reviewed" includes reviews written before delivery.* Yes. It is the review rate, not satisfaction.
+
+---
+
+## 3. Cohorts
+
+### What and why
+
+- Cohort = month of a customer's first delivered purchase. Each cell is the share of the cohort that bought
+  in month k after it.
+- Repeat purchase rate: 2.2% of all customers ever bought again (a lower bound), and
+  2.0% within 180 days among customers with 180 days observed.
+- Sellers behave very differently: 59.2% sell again the month after their first sale.
+
+### Key SQL: the grid with explicit censoring (`sql/marts/04_mart_customer_cohorts.sql`)
+
+```sql
+grid as (
+    select
+        c.cohort_month,
+        c.cohort_customers,
+        k.month_number,
+        c.cohort_month + to_months(k.month_number::integer)
+            <= (select last_complete_month from int_data_window) as is_observed
+    from cohort_size c
+    cross join (select unnest(generate_series(0, 18)) as month_number) k
+)
+```
+
+(The real file computes the upper bound of the series from the data window instead of a fixed number.)
+
+Line by line:
+
+1. `grid as (` builds every cohort by month cell, whether or not anyone bought.
+2. `c.cohort_month, c.cohort_customers` carry the cohort and its size.
+3. `k.month_number` is months since first purchase.
+4. `cohort_month + to_months(k)` is the calendar month of that cell.
+5. `<= last_complete_month` asks whether the data fully covers that month. This is the censoring flag.
+6. `cross join` pairs every cohort with every month number.
+7. `generate_series` creates the month numbers, and `unnest` turns the list into rows.
+
+Later, `case when is_observed then active / size end` gives zero for observed months with no buyers and
+NULL for months the data cannot see.
+
+### Likely questions
+
+1. **What is right censoring here?** A customer acquired in July 2018 cannot show a purchase in December
+   2018 because the data ends in August 2018. Treating that as "did not return" is wrong.
+2. **How did you handle it?** Unobservable cells are NULL, the curve pools only observed cells, and the
+   180-day rate uses only customers with 180 days of data.
+3. **Why is the all-time repeat rate lower than the 180-day rate would suggest?** It includes recent
+   customers with little time to return, so it is a lower bound.
+4. **Why did cohorts start in 2017?** 2016 has very few orders and a two-month gap. 2016 buyers are still
+   used to decide who is new in 2017.
+5. **What does such low retention mean for the business?** Olist acquires almost all of its sales from new
+   customers. That also caps how much money a repeat purchase effect can be worth.
+
+### Weak points and honest answers
+
+- *The last complete month rule drops August 2018.* It ends on the 29th, so including it would understate
+  that month slightly. The stricter rule is easier to defend.
+- *Retention this low can partly be a data artefact* (for example, people using new accounts). Nothing in
+  the data can show that, so it is stated, not corrected.
+
+---
+
+## 4. Regression discontinuity
+
+### What and why
+
+- Running variable: days between the estimated and actual delivery date. Day 0 is on time, day 1 is late.
+- Idea: orders delivered one day late and orders delivered on the day are otherwise similar, so the jump in
+  outcomes at the line estimates the effect of missing the promise.
+- Result: 1-star jump -1.7 pp (95% CI -4.9 pp to +1.5 pp),
+  day 1 vs day 0 +4.5 pp, repeat purchase +0.1 pp
+  (CI -2.0 pp to +2.2 pp). Bandwidth 4 days.
+
+### Key code: the estimator (`src/rd.py`)
+
+```python
+keep = window(x, c, h) & ~np.isnan(y)
+x, y = x[keep], y[keep]
+d = (x >= c).astype(float)
+xc = x - (c - 0.5)
+w = kernel_weights(xc, h, kernel)
+X = np.column_stack([np.ones_like(xc), d, xc, d * xc])
+fit = sm.WLS(y, X, weights=w).fit(cov_type="HC1")
+tau, se = fit.params[1], fit.bse[1]
+```
+
+Line by line:
+
+1. Keep orders within h days of the line on each side, and drop missing outcomes.
+2. Apply the filter to both arrays.
+3. `d` is the treatment flag: 1 if the order is late (day 1 or later).
+4. `xc` centers the running variable halfway between day 0 and day 1, so the jump is measured there.
+5. Triangular kernel weights: orders nearer the line count more.
+6. Design matrix: intercept, treatment, slope, and slope times treatment. Separate lines on each side.
+7. Weighted least squares with HC1 robust standard errors.
+8. `tau` is the coefficient on `d`: the gap between the two lines at the cutoff. That is the effect.
+
+### Likely questions
+
+1. **Why RD and not just compare late and on-time orders?** Late orders differ in many ways: remote
+   regions, heavy items, peak seasons. The naive gap (6.6% vs 53.8%
+   1-star) mixes all of that. RD compares orders right next to each other.
+2. **How did you pick the bandwidth?** Leave-one-out cross-validation: predict each day near the line from
+   a line fitted on the days beyond it, and pick the bandwidth with the smallest error. Then I showed half
+   and double (2 and 8 days).
+3. **What do the placebo and density checks tell you?** Placebo cutoffs show no fake jumps. The density
+   check fails: 1,292 orders arrive on day 0 against 825 on day 1.
+   Carriers likely push to meet the date, so the two sides are not perfectly comparable.
+4. **Why report a day 1 vs day 0 comparison as well?** The curve rises steeply after the line, and a local
+   linear fit gives that slope much of the change. The adjacent-day difference shows the other side of that
+   trade-off. The truth about a one-day miss lies in that range.
+5. **Is this a global effect?** No. It is local to the promise date. It says nothing directly about orders
+   that are a week late, which the descriptive curve shows are far worse.
+
+### Weak points and honest answers
+
+- *Density and balance checks partly fail.* Yes (3 of 14
+  covariates jump, including promised days). I report it, add a donut check, and present the estimate as
+  suggestive, not definitive.
+- *The running variable is discrete* (whole days). Few distinct values means standard RD inference is
+  approximate. That is why the adjacent-day comparison is shown too.
+- *Review timing is mechanical.* Many late customers are surveyed before the parcel arrives
+  (70.2% on day 3). Part of the "effect" is when Olist asks, not only how
+  customers feel. That is a finding in itself.
+- *Repeat purchase is underpowered.* The interval is wide. A null here means "cannot detect", not "no effect".
+
+---
+
+## 5. Business sizing
+
+### What and why
+
+Repeat value lost per quarter = late first orders x drop in repeat probability x value per repeat customer.
+Base quarter 799 late first orders, value per repeater R$ 162.
+Low / base / high use the favourable bound, the point estimate and the harmful bound of the 95% CI:
+R$ -2,846 / R$ -146 / R$ 2,554 per quarter.
+
+### Key code (`src/sizing.py`)
+
+```python
+effects = {
+    "low": m["rd_repeat_180_ci_high"],
+    "base": m["rd_repeat_180_estimate"],
+    "high": m["rd_repeat_180_ci_low"],
+}
+for scen, eff in effects.items():
+    lost_customers = -eff * n
+    loss = lost_customers * repeat_value_per_repeater
+```
+
+Line by line:
+
+1. Three scenarios come from the estimate and its interval, not from guesses.
+2. "Low" loss uses the most favourable bound (late orders might even help).
+3. "Base" is the point estimate.
+4. "High" uses the most harmful bound the data allows.
+5. A negative effect on repeat probability means customers lost, so the sign is flipped.
+6. Customers lost times the value they would have brought back gives money per quarter.
+
+### Likely questions
+
+1. **Why is the number so small?** Repeat purchase is rare (2.0% in 180 days). Even a
+   large relative change in a small rate is a small amount of money.
+2. **Why order value and not revenue?** Olist's commission is not in the data. Multiply by the take rate.
+3. **Why two scopes, local and all late?** RD identifies the effect only near the line. Applying it to all
+   late orders is an extrapolation and is labelled as one.
+4. **What is missing from the sizing?** The effect of bad reviews on future sales of that seller or product.
+   The data has no way to measure it.
+5. **Would you present a negative loss?** Yes, with the explanation. Hiding it would be overselling.
+
+### Weak points and honest answers
+
+- *One base quarter.* 4.2% of orders were late in that quarter, lower than the all-data
+  6.8%. A worse quarter scales the result up proportionally; still small.
+
+---
+
+## 6. A/B test design
+
+### What and why
+
+Proactive delay message the day after a missed promise. Randomised by customer, 50/50. Primary metric:
+1-star rate of flagged late orders (baseline 56.0%). 1,245 orders per arm,
+about 5.7 months. Design only.
+
+### Key code (`src/experiment.py`)
+
+```python
+p_treat = p_control * (1 - relative_drop)
+es = abs(proportion_effectsize(p_control, p_treat))
+n = NormalIndPower().solve_power(effect_size=es, alpha=0.05, power=0.8,
+                                 ratio=1.0, alternative="two-sided")
+```
+
+Line by line:
+
+1. The treated rate if the message cuts 1-star reviews by the chosen relative amount.
+2. Cohen's h: a standardised difference between two proportions (arcsine transform).
+3. Solve for the sample size per arm that gives 80% power at a 5% two-sided significance level.
+4. Equal arms (`ratio=1.0`), two-sided because the message could also make things worse.
+
+### Likely questions
+
+1. **Why randomise by customer, not order or seller?** A customer with two late orders should get a
+   consistent experience. The message comes from Olist, not the seller, so seller randomisation adds no
+   protection and cuts the number of units.
+2. **Why not repeat purchase as the primary metric?** It would need 104,314 first orders
+   per arm. 1-star rate is measurable within weeks and is what the analysis points at.
+3. **What is a guardrail metric here?** Something that must not get worse: review response rate,
+   cancellations, service contacts, delivery time.
+4. **How do you avoid peeking?** Fix the sample size in advance, or use a sequential design with alpha
+   spending if the business needs early looks.
+5. **What is sample ratio mismatch and how would you check it?** Arms far from 50/50 mean assignment or
+   logging is broken. A daily chi-square test on arm counts; stop and debug if it fails.
+
+### Weak points and honest answers
+
+- *The duration is long.* It is based on 2017 to 2018 volumes. Today's volume would shorten it, but that cannot
+  be computed from this data.
+- *Trigger quality is assumed.* The design flags orders after the date is missed, which is exact. A
+  predictive trigger (earlier warning) would need a separate model.
+
+---
+
+## 7. Power BI
+
+### What and why
+
+Star schema: `fact_orders` at order grain with keys to `dim_customer`, `dim_seller`, `dim_date`,
+`dim_category`. Model outputs (RD, cohorts, sizing, power) go in separate `agg_` tables because DAX should
+not re-estimate a regression. Four pages mirror the HTML dashboard.
+
+### Key DAX (`powerbi/measures.dax`)
+
+```dax
+One Star Rate =
+    DIVIDE (
+        CALCULATE ( COUNTROWS ( fact_orders ), fact_orders[one_star] = 1 ),
+        COUNT ( fact_orders[one_star] )
+    )
+```
+
+Line by line:
+
+1. A measure, so it recalculates for whatever the visual is filtered to.
+2. `DIVIDE` returns blank instead of an error when the denominator is zero.
+3. `CALCULATE(COUNTROWS(...), one_star = 1)` counts orders with a 1-star review in the current filter.
+4. `COUNT(fact_orders[one_star])` counts non-blank values: only orders that have a review.
+5. So the rate is 1-star reviews over reviewed orders, matching the SQL definition.
+
+### Likely questions
+
+1. **Why a star schema?** Filters flow one way from small dimensions to one fact table. DAX stays simple and
+   the model is fast.
+2. **Why are some tables not related?** The `agg_` tables are pre-computed results at a different grain.
+   Relating them to the fact would create ambiguous filter paths.
+3. **How do you know the report is right?** The build guide lists the expected value for each card, taken
+   from `outputs/metrics.json`.
+4. **Measure or calculated column?** Measures for anything that aggregates. The only calculated column
+   is a capped days-late axis for display.
+5. **How would you handle dates?** `dim_date` marked as the date table, related on an integer key.
+
+### Weak points and honest answers
+
+- *The .pbix is not in the repo.* It is built by hand from the guide. The CSVs and measures are versioned,
+  which is what matters for review.
+
+---
+
+## Glossary
+
+- **Cohort:** a group of customers who started in the same period (here, the month of their first purchase),
+  tracked over time.
+- **Right censoring:** the outcome has not happened yet because the observation window ended, not because
+  it will not happen. Recent customers are censored for long-run outcomes.
+- **Regression discontinuity (RD):** a method that estimates a causal effect by comparing units just
+  above and just below a cutoff that decides treatment.
+- **Bandwidth:** how far from the cutoff the RD uses data. Narrow is less biased but noisier; wide is the reverse.
+- **Power:** the chance a test detects an effect of a given size if it is real. 80% is the usual target.
+- **MDE (minimum detectable effect):** the smallest effect the test is sized to detect with the chosen power.
+- **Guardrail metric:** a metric that must not get worse. It can stop a launch even if the primary metric wins.
+- **SRM (sample ratio mismatch):** the arms' sizes differ from the planned split by more than chance allows,
+  a sign that assignment or logging is broken.

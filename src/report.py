@@ -70,3 +70,4 @@ def main(m):
     t = config.DOCS / "templates"
     render_file(t / "README.md.tmpl", config.ROOT / "README.md", m)
     render_file(t / "memo.md.tmpl", config.DOCS / "memo.md", m)
+    render_file(t / "INTERVIEW_PREP.md.tmpl", config.DOCS / "INTERVIEW_PREP.md", m)
