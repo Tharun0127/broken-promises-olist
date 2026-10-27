@@ -153,6 +153,7 @@ STRUCTURAL = {
     str(round(100 * config.EXPERIMENT_MDE_RELATIVE)): "experiment MDE in percent (config)",
     "2016": "year", "2017": "year", "2018": "year",
     "3.11": "Python version",
+    "6": "exponent of the pandas vs SQL tolerance (1e-6, verify.TOL)",
     "4.0": "data licence version (CC BY-NC-SA 4.0)",
 }
 

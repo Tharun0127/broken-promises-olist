@@ -1,105 +1,158 @@
 # The Promise Gap
 
-Late deliveries, bad reviews and lost customers on the Olist marketplace. A funnel, cohort and
-regression discontinuity analysis of 99,441 real orders, with a costed recommendation and
-an experiment design.
+**Do late deliveries cost an online marketplace its reviews and its repeat customers?**
+An end-to-end analysis of 99,441 real orders from Olist, a Brazilian marketplace
+integrator: SQL data model, funnels, cohort retention, a causal regression discontinuity, a costed
+recommendation and a powered A/B test design.
 
-**Question.** Do late deliveries cause bad reviews and lost repeat purchases on the Olist Brazilian
-e-commerce marketplace, and what should Olist test to fix it?
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
+![SQL](https://img.shields.io/badge/SQL-DuckDB-FFF000?logo=duckdb&logoColor=black)
+![pandas](https://img.shields.io/badge/pandas-150458?logo=pandas&logoColor=white)
+![statsmodels](https://img.shields.io/badge/statsmodels-causal%20inference-4B8BBE)
+![Plotly](https://img.shields.io/badge/Plotly-dashboard-3F4F75?logo=plotly&logoColor=white)
+![Power BI](https://img.shields.io/badge/Power%20BI-star%20schema%20%2B%20DAX-F2C811?logo=powerbi&logoColor=black)
+![pytest](https://img.shields.io/badge/tests-pytest-0A9EDC?logo=pytest&logoColor=white)
 
-**Answer.** Partly. Late orders get far more 1-star reviews (53.8% vs 6.6% on time), but missing the promise by one day is not the main cause. Once the trend is allowed for, the jump at the promise date is -1.7 pp (95% CI -4.9 pp to +1.5 pp). The damage builds over the following days: 13.0% 1-star on day 1, 42.5% on day 3, the point where most late customers are surveyed before the parcel arrives. There is no detectable effect on repeat purchase (+0.1 pp, CI -2.0 pp to +2.2 pp), and repeat purchase is so rare (2.0% within 180 days) that even the worst case is R$ 2,554 of order value a quarter.
+**[Live dashboard](https://tharun0127.github.io/olist-delivery-promise-gap/)** ·
+**[One-page memo](docs/memo.md)** ·
+**[Full RD results](docs/promise_gap_results.md)** ·
+**[Walkthrough notebook](notebooks/walkthrough.ipynb)**
 
-**Recommendation.** Test a proactive delay message for orders that miss their date, with survey timing held the same in both arms. It needs 1,245 late orders per arm, about 5.7 months at 2017 to 2018 volumes. Separately, stop sending the review survey before the parcel arrives.
+![1-star rate by days late](docs/screenshots/promise_gap_curve.png)
 
-Dashboard: [docs/index.html](docs/index.html) (four pages: Funnel, Cohorts, Promise Gap, Experiment Plan).
-One-page memo: [docs/memo.md](docs/memo.md).
+---
+
+## Question, answer, recommendation
+
+**Question.** Do late deliveries cause bad reviews and lost repeat purchases on Olist, and what should
+Olist test to fix it?
+
+**Answer.** Partly, and not in the way the simple comparison suggests.
+
+- Late orders get far more 1-star reviews: **53.8%** against **6.6%** on time.
+- But missing the promise by one day is not a cliff. Once the trend is allowed for, the jump at the
+  promise date is **-1.7 pp** (95% CI -4.9 pp to +1.5 pp).
+- The damage builds over the next days: 8.5% 1-star on the promise day,
+  13.0% on day 1, **42.5% on day 3**. Day 3 is exactly when most late
+  customers (70.2%) get the review survey before their parcel arrives.
+- Repeat purchase does not measurably move (+0.1 pp, CI -2.0 pp to
+  +2.2 pp). Only 2.0% of customers return within 180 days, so even the
+  worst case is **R$ 2,554** of order value a quarter.
+
+**Recommendation.** Test a proactive delay message, sent the day after a missed date, randomised by
+customer, with survey timing held the same in both arms. It needs **1,245 late orders per arm,
+about 5.7 months**. Separately, stop sending the review survey before the parcel arrives.
 
 ## Limitations
 
-Read these before the results.
+Read these before the results. They are the questions a careful reviewer should ask.
 
-- **The causal estimate is local.** The regression discontinuity measures what happens when an order
-  misses its promise by about one day. It does not measure the effect of being a week late.
+- **The causal estimate is local.** It measures a one-day miss of the promise date, not a week-late order.
 - **Two validity checks partly fail.** Fewer orders arrive just after the promise date than just before
-  it (count ratio 0.68), and 3 of 14
-  pre-delivery covariates jump at the line, including the promised delivery time. Orders just on time and
-  just late are not perfectly comparable. Results are reported with that caveat.
-- **Repeat purchase is too rare to measure well.** Only 2.0% of customers buy again within
-  180 days. The repeat effect has a wide interval and cannot be told apart from zero.
-- **Most late orders are reviewed before they arrive.** 74.5% of late-order reviews
-  were sent before delivery. The 1-star rate of late orders partly measures "my parcel has not come".
+  (count ratio 0.68), and 3 of 14 pre-delivery
+  covariates jump at the line. The two sides are not perfectly comparable, so the estimate is reported as
+  suggestive, with a donut check and a day 1 vs day 0 comparison alongside it.
+- **Repeat purchase is too rare to measure precisely.** A null here means "cannot detect", not "no effect".
+- **Review timing is partly mechanical.** 74.5% of late-order reviews were sent before
+  delivery, so a late order's 1-star partly rates the wait, not the product.
 - **No margin or commission data.** Money is order value paid by customers, not Olist revenue.
-- **Old, bounded data.** Orders run from 2016-09-04 to 2018-08-29. Recent customers have less time to
-  return. The all-time repeat rate is therefore a lower bound; the 180-day rate and the cohort curves
-  use only customers and months that are fully observed.
-- **The experiment is a design.** Nothing was run.
+- **Historic data** (2016-09-04 to 2018-08-29). The all-time repeat rate is a lower bound; the 180-day rate and
+  cohort curves use only fully observed customers and months.
+- **The A/B test is a design.** Nothing was run.
 
-## What this shows
+---
 
-| Skill | Where |
-|:--|:--|
-| Data profiling and quality checks | `src/profile_data.py`, [docs/data_profile.md](docs/data_profile.md) |
-| Layered SQL model (staging, intermediate, marts) | `sql/` |
-| Choosing a grain and a customer key | `sql/intermediate/04_int_delivered_orders.sql`, [docs/exclusions.md](docs/exclusions.md) |
-| Funnels with CTEs, conditional aggregation and GROUPING SETS | `sql/marts/02_mart_fulfilment_funnel.sql`, `sql/marts/03_mart_seller_funnel.sql` |
-| Cohort retention with window functions and right censoring | `sql/marts/04_mart_customer_cohorts.sql`, `src/cohorts.py` |
-| Causal inference (regression discontinuity) | `src/rd.py`, `src/promise_gap.py`, [docs/promise_gap_results.md](docs/promise_gap_results.md) |
-| Business sizing with stated assumptions | `src/sizing.py`, [docs/assumptions.md](docs/assumptions.md) |
-| Experiment design and power analysis | `src/experiment.py`, [docs/experiment_design.md](docs/experiment_design.md) |
-| BI modelling (star schema, DAX) | `src/powerbi_export.py`, `powerbi/measures.dax`, [powerbi/POWERBI_BUILD_GUIDE.md](powerbi/POWERBI_BUILD_GUIDE.md) |
-| Interactive dashboard | `src/dashboard.py`, [docs/index.html](docs/index.html) |
-| Testing and verification | `tests/`, `src/verify.py` |
-| Writing for decision makers | [docs/memo.md](docs/memo.md) |
+## What this project demonstrates
+
+| Skill | What I did | Where |
+|:--|:--|:--|
+| **SQL data modelling** | Three-layer DuckDB model (staging, intermediate, marts), one concept per CTE, typed and documented | `sql/` |
+| **Data quality** | Profiled keys, join cardinality, nulls and duplicates; logged every exclusion with row counts | [data_profile.md](docs/data_profile.md), [exclusions.md](docs/exclusions.md) |
+| **Choosing the right grain and key** | One row per delivered order; customers by `customer_unique_id`, without which the repeat rate is zero by construction | `sql/intermediate/04_int_delivered_orders.sql` |
+| **Funnel analysis** | Fulfilment and seller acquisition funnels with conditional aggregation and `GROUPING SETS` | `sql/marts/02_*.sql`, `sql/marts/03_*.sql` |
+| **Cohort retention** | Monthly cohorts with `ROW_NUMBER`, `LAG` and date bucketing; right censoring handled explicitly | `sql/marts/04_*.sql`, `src/cohorts.py` |
+| **Causal inference** | Regression discontinuity: cross-validated bandwidth, robustness, placebo, density and balance checks | `src/rd.py`, [promise_gap_results.md](docs/promise_gap_results.md) |
+| **Business sizing** | Effect and its confidence interval turned into money per quarter, every assumption written down | [assumptions.md](docs/assumptions.md) |
+| **Experiment design** | Hypothesis, randomisation unit, guardrails, power from measured baselines, pitfalls | [experiment_design.md](docs/experiment_design.md) |
+| **BI and dashboards** | Power BI star schema with commented DAX and build guide; interactive four-page Plotly dashboard | `powerbi/`, [index.html](docs/index.html) |
+| **Reproducibility and testing** | One command rebuilds everything; pytest known-answer tests; SQL cross-checked in pandas | `run_all.py`, `tests/`, `src/verify.py` |
+| **Communication** | One-page memo with ranked, sized recommendations; honest limitations | [memo.md](docs/memo.md) |
 
 ## Key results
 
 | Metric | Value |
 |:--|--:|
-| Orders in the data | 99,441 |
-| Delivered orders (analysis grain) | 96,470 |
-| Orders delivered (purchase to delivery) | 97.0% |
+| Orders analysed | 99,441 |
+| Orders that reach the customer | 97.0% |
 | Delivered orders that were late | 6.8% |
-| Customers (customer_unique_id) | 93,350 |
-| Repeat purchase rate, all customers, any time | 2.2% |
-| Repeat purchase within 180 days (full window observed) | 2.0% |
-| 1-star rate, on time vs late (all orders) | 6.6% vs 53.8% |
+| Customers (people, not order IDs) | 93,350 |
+| Customers who ever buy again | 2.2% |
+| Customers who buy again within 180 days | 2.0% |
+| 1-star rate: on time vs late | 6.6% vs 53.8% |
 | RD jump in 1-star rate at the promise date | -1.7 pp (CI -4.9 pp to +1.5 pp) |
-| 1-star rate, day 0 vs day 1 vs day 3 | 8.5%, 13.0%, 42.5% |
+| Day 1 vs day 0 difference in 1-star rate | +4.5 pp |
 | RD jump in mean review score | -0.09 (CI -0.22 to +0.04) |
 | RD jump in 180-day repeat purchase | +0.1 pp (CI -2.0 pp to +2.2 pp) |
 | Repeat order value at risk per quarter (low / base / high) | R$ -2,846 / R$ -146 / R$ 2,554 |
-| Leads that close / closed deals that ever sell | 10.5% / 44.7% |
-| Experiment size (1-star, 10% relative drop) | 1,245 per arm, 5.7 months |
+| Seller leads that close / closed sellers that ever sell | 10.5% / 44.7% |
+| Experiment: 1-star from 56.0% to 50.4% | 1,245 per arm, 5.7 months |
 
-Negative money means the scenario implies late orders gain repeat value. See [docs/assumptions.md](docs/assumptions.md).
+Negative money means the scenario implies late orders gain repeat value. See [assumptions.md](docs/assumptions.md).
 
-## Method
+## Dashboard
+
+Four pages: Funnel, Cohorts, Promise Gap and Experiment Plan. Every chart title states its takeaway and is
+generated from the data. A Power BI version can be rebuilt from `powerbi/` using the
+[build guide](powerbi/POWERBI_BUILD_GUIDE.md).
+
+![Dashboard overview](docs/screenshots/dashboard_overview.png)
+
+Retention is the other side of the story. Almost every sale comes from a new customer:
+
+![Customer cohort retention](docs/screenshots/cohort_heatmap.png)
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[Kaggle CSVs<br/>orders, items, reviews,<br/>customers, leads, deals] --> B[sql/staging<br/>typed views]
+    B --> C[sql/intermediate<br/>delivered-order grain,<br/>exclusions log]
+    C --> D[sql/marts<br/>funnels, cohorts,<br/>RD dataset]
+    D --> E[src/<br/>RD, sizing,<br/>power analysis]
+    E --> F[outputs/metrics.json]
+    F --> G[README, memo,<br/>dashboard, Power BI]
+    F --> H[src/verify.py<br/>pandas rebuild,<br/>number tracing]
+```
 
 1. **Profile** every table: keys, join cardinality, nulls, duplicates, status and date coverage.
-2. **Model** in DuckDB SQL. Staging casts types. The grain is one row per delivered order. Customers are
-   `customer_unique_id`, because `customer_id` is created per order and would hide every repeat purchase.
-   Every exclusion is logged with row counts.
-3. **Funnels.** Fulfilment (purchased, approved, shipped, delivered, reviewed) by month and category.
-   Seller acquisition (lead, closed deal, first sale, still selling 90 days later) by lead origin and segment.
-4. **Cohorts.** Monthly acquisition cohorts. Cells not yet observable are left empty, and curves pool only
-   observed cells, so recent cohorts do not drag retention down.
-5. **Regression discontinuity.** Running variable: delivered date minus estimated date, in days. Local linear
-   regression with a triangular kernel, bandwidth 4 days chosen by cross-validation, robustness at
-   2 and 8 days, uniform kernel, donut, a day 1 vs day 0 comparison,
-   placebo cutoffs, a density test and covariate balance.
-6. **Sizing.** The repeat effect and its interval, times late first orders per quarter, times repeat order value.
-7. **Experiment design.** Proactive delay message, randomised by customer, powered on measured baselines.
-8. **Verification.** Core metrics rebuilt in pandas and matched to SQL, known-answer tests, and a check that
-   every number in this README and the memo comes from `outputs/metrics.json`.
+2. **Model** in DuckDB SQL. The grain is one row per delivered order (96,470 rows).
+3. **Funnels** for order fulfilment and seller acquisition.
+4. **Cohorts** with explicit right censoring: unobservable cells stay empty, not zero.
+5. **Regression discontinuity** at the promise date. Local linear, triangular kernel, bandwidth
+   4 days by cross-validation, robustness at 2 and 8 days,
+   uniform kernel, donut, placebo cutoffs, density test and covariate balance.
+6. **Sizing** of repeat revenue at risk, low / base / high from the confidence interval.
+7. **Experiment design**, powered on baselines measured in this data.
 
-All choices and the reasons for them: [docs/DECISIONS.md](docs/DECISIONS.md).
-Interview preparation: [docs/INTERVIEW_PREP.md](docs/INTERVIEW_PREP.md).
+## Built to be trusted
+
+- **One command rebuilds everything** from raw data: `python run_all.py`. A rebuild from a fresh clone
+  reproduces every output file byte for byte.
+- **SQL is cross-checked in pandas.** Funnel conversion, repeat rates and every observed cohort cell are
+  recomputed independently from the raw CSVs and must match within 1e-6.
+- **Known-answer tests.** The real SQL runs on a small hand-built dataset where every answer was worked
+  out on paper; the RD code is tested on inputs with a known effect.
+- **No hand-typed numbers.** This README, the memo and the interview guide are rendered from templates,
+  and a check fails the build if any number in them does not come from `outputs/metrics.json`.
+- **Every decision is written down** with its reason: [DECISIONS.md](docs/DECISIONS.md).
 
 ## How to reproduce
 
 Requires Python 3.11 and a Kaggle account.
 
 ```bash
+git clone https://github.com/Tharun0127/olist-delivery-promise-gap.git
+cd olist-delivery-promise-gap
 python -m venv .venv
 .venv/Scripts/activate            # Windows. On macOS or Linux: source .venv/bin/activate
 pip install -r requirements.txt
@@ -111,11 +164,6 @@ kaggle datasets download -d olistbr/marketing-funnel-olist -p data/raw --unzip
 python run_all.py                 # rebuilds outputs/, docs/, README.md, powerbi/data/ and the notebook
 pytest                            # known-answer tests
 ```
-
-`data/raw/` must contain the eleven Olist CSV files. `run_all.py` deletes and rebuilds the DuckDB
-warehouse each time, then runs the verification checks and fails loudly if any of them fail.
-
-To publish the dashboard, enable GitHub Pages for the `docs/` folder on the main branch.
 
 ## Repository layout
 
@@ -131,4 +179,14 @@ powerbi/           measures.dax and the build guide (CSVs are generated into pow
 notebooks/         executed walkthrough notebook
 ```
 
-Data: Olist, Brazilian E-Commerce Public Dataset and Marketing Funnel dataset, Kaggle (CC BY-NC-SA 4.0).
+## Further reading
+
+- [Memo](docs/memo.md): the answer and three ranked, sized recommendations on one page.
+- [RD results](docs/promise_gap_results.md): every estimate, check and table.
+- [Experiment design](docs/experiment_design.md): hypothesis, unit, metrics, power, pitfalls.
+- [Interview prep](docs/INTERVIEW_PREP.md): how each part works, line by line, and where it is weak.
+
+---
+
+Author: [Tharun](https://github.com/Tharun0127). Data: Olist, Brazilian E-Commerce Public Dataset and
+Marketing Funnel dataset on Kaggle (CC BY-NC-SA 4.0). Questions and feedback are welcome in the issues.
