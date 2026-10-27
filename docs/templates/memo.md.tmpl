@@ -1,0 +1,42 @@
+# Memo: late deliveries, reviews and repeat purchases
+
+**To:** Olist operations and CX leads. **Data:** Olist orders {{data_start}} to {{data_end}}.
+
+## Answer
+
+Late deliveries hurt reviews, but the damage comes from being several days late, not from missing the
+date by one. Repeat purchases show no measurable loss.
+
+- Late orders get far more 1-star reviews: {{naive_one_star_late|pct}} against {{naive_one_star_on_time|pct}} on time.
+- Missing the promise by a day adds little on its own. Allowing for the trend, the jump at the promise date is
+  {{rd_one_star_estimate|pp}} (95% CI {{rd_one_star_ci_low|pp}} to {{rd_one_star_ci_high|pp}}).
+- The rate then climbs fast: {{rd_one_star_day1_mean|pct}} on day 1, {{one_star_day3|pct}} on day 3. Day 3 is when
+  most late customers start getting the review survey before the parcel ({{review_before_delivery_day3|pct}}).
+- No detectable effect on repeat purchase ({{rd_repeat_180_estimate|pp}}, CI {{rd_repeat_180_ci_low|pp}} to
+  {{rd_repeat_180_ci_high|pp}}). Only {{repeat_rate_180d|pct}} of customers return within 180 days, so the worst
+  case is {{size_loss_high_all_late|brl}} of order value per quarter.
+
+## Recommendations, ranked
+
+**1. Test a proactive delay message.** Message customers the day after a missed date with a new date.
+Randomise by customer, keep survey timing the same in both arms, and judge on the 1-star rate. Size:
+{{size_q_late_orders|int}} late orders a quarter carrying {{size_q_late_gmv|brl}} of order value. Needs
+{{exp_n_per_arm|int}} orders per arm, about {{exp_months|num1}} months. Ranked first because it is cheap, targets the
+days where the damage builds, and produces evidence the data cannot.
+
+**2. Stop sending the review survey before the parcel arrives.** {{size_q_reviews_before_delivery|int}} orders a
+quarter ({{size_q_reviews_before_delivery_gmv|brl}} of order value) were surveyed before delivery. Trigger the
+survey on confirmed delivery. This makes reviews rate the product and the seller, not the wait. Its money value
+cannot be computed here: the data has no link from reviews to later sales.
+
+**3. Cut delays of three days or more, starting in the highest-risk states.** Orders 3 or more days late carried
+{{size_q_late3_gmv|brl}} of order value a quarter. {{size_risk_states}} are late {{size_risk_states_late_rate|pct}}
+of the time against {{size_national_late_rate|pct}} nationally, but hold only {{size_risk_states_share_of_late|pct}}
+of late orders, so this is a targeted fix, not the main lever. Ranked last because it costs the most to act on.
+
+## Limitations
+
+- The causal estimate is local to the promise date. Orders a week late are described, not causally estimated.
+- The density and covariate checks partly fail. Orders just on time and just late differ a little.
+- Money is customer order value. Olist's commission is not in the data.
+- Data is from 2016 to 2018. Volumes and delivery performance today will differ.

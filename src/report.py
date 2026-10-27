@@ -66,6 +66,7 @@ def render_file(template_path, out_path, m):
 
 
 def main(m):
+    m = {**m, "answer": answer_text(m), "recommendation": recommendation_text(m)}
     t = config.DOCS / "templates"
     render_file(t / "README.md.tmpl", config.ROOT / "README.md", m)
     render_file(t / "memo.md.tmpl", config.DOCS / "memo.md", m)
