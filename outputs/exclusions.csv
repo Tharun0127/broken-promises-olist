@@ -1,0 +1,9 @@
+step,sample,description,rows_before,rows_after,rows_removed
+1,Grain,All orders in the raw data,,99441,
+2,Grain,Remove orders whose status is not delivered,99441,96478,2963
+3,Grain,Remove delivered orders with no delivery timestamp,96478,96470,8
+4,Reviews,Review outcomes: remove delivered orders with no review,96470,95824,646
+5,Repeat,Repeat outcome: keep only each customer's first delivered order,96470,93350,3120
+6,Repeat,Repeat outcome: remove first orders without a full repeat window before data end,93350,56034,37316
+7,Cohorts,Customers (customer_unique_id) with at least one delivered order,,93350,
+8,Cohorts,Remove customers whose first purchase is before the cohort start,93350,93086,264
