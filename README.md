@@ -13,7 +13,7 @@ recommendation and a powered A/B test design.
 ![Power BI](https://img.shields.io/badge/Power%20BI-star%20schema%20%2B%20DAX-F2C811?logo=powerbi&logoColor=black)
 ![pytest](https://img.shields.io/badge/tests-pytest-0A9EDC?logo=pytest&logoColor=white)
 
-**[Live dashboard](https://tharun0127.github.io/olist-delivery-promise-gap/)** ·
+**[Live dashboard](https://tharun0127.github.io/broken-promises-olist/)** ·
 **[One-page memo](docs/memo.md)** ·
 **[Full RD results](docs/promise_gap_results.md)** ·
 **[Walkthrough notebook](notebooks/walkthrough.ipynb)**
@@ -151,8 +151,8 @@ flowchart LR
 Requires Python 3.11 and a Kaggle account.
 
 ```bash
-git clone https://github.com/Tharun0127/olist-delivery-promise-gap.git
-cd olist-delivery-promise-gap
+git clone https://github.com/Tharun0127/broken-promises-olist.git
+cd broken-promises-olist
 python -m venv .venv
 .venv/Scripts/activate            # Windows. On macOS or Linux: source .venv/bin/activate
 pip install -r requirements.txt
