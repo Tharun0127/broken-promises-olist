@@ -74,6 +74,12 @@ Each entry: the choice, the alternatives, and why. Grouped by section.
 - **Donut RD added because the density check fails.** Fewer orders arrive one day late than the
   trend predicts. A donut that drops days 0 and 1 shows whether the result depends on the orders
   right at the line.
+- **A day 1 vs day 0 comparison is reported next to the local linear RD.** The outcome curve rises
+  steeply right after the line, and a local linear fit gives that slope much of the change. Comparing
+  the two adjacent days (the local randomisation view of RD) shows the other side of the trade-off.
+  Neither is presented as the single truth; both are shown with their assumptions.
+- **Survey-timing curve added.** The profile showed most late orders are reviewed before they
+  arrive. Plotting that share by days late explains where the 1-star ramp comes from.
 - **Repeat outcome uses first orders only, with a full 180-day window.** See exclusions.md.
 - **Covariate balance includes a "predicted 1-star" index.** Each covariate is tested on its own,
   and also all at once by predicting the outcome from covariates and testing that prediction for a jump.
