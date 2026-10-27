@@ -1,0 +1,12 @@
+join,no_match,exactly_one,many
+orders -> customers (customer_id),0,99441,0
+orders -> order_items,775,88863,9803
+orders -> order_reviews,768,98126,547
+orders -> order_payments,1,96479,2961
+order_items -> products,0,112650,0
+order_items -> sellers,0,112650,0
+products -> category_translation,623,32328,0
+customer_unique_id -> customer_id,0,93099,2997
+review_id -> orders,0,97621,789
+closed_deals -> mql (mql_id),0,842,0
+closed_deals -> order_items (seller_id has any sale),462,380,0

@@ -1,0 +1,32 @@
+{
+  "orders": 99441,
+  "delivered_status": 96478,
+  "delivered_missing_date": 8,
+  "not_delivered_with_date": 6,
+  "missing_estimate": 0,
+  "last_purchase": "2018-08-29 15:00:37",
+  "orders_after_aug_2018": 20,
+  "orders_2016": 329,
+  "unique_customers": 96096,
+  "customer_ids": 99441,
+  "orders_multi_review": 547,
+  "reviews_shared_id": 789,
+  "products_no_category": 610,
+  "categories_no_translation": 2,
+  "orders_no_items": 775,
+  "late_delivered_share": 0.06773090079817559,
+  "late_review_before_delivery": 0.7453580901856764,
+  "ontime_review_before_delivery": 0.003880192119541048,
+  "review_last_sent": "2018-08-31",
+  "delivered_after_review_end": 59,
+  "review_rate_after_review_end": 0.9830508474576272,
+  "mql": 8000,
+  "closed_deals": 842,
+  "closed_with_sales": 380,
+  "mql_range": [
+    "2017-06-14",
+    "2018-05-31"
+  ],
+  "geo_rows": 1000163,
+  "geo_zips": 19015
+}

@@ -1,0 +1,14 @@
+# Raw data is downloaded from Kaggle, never committed
+data/
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+.ipynb_checkpoints/
+# Power BI star schema CSVs are rebuilt by run_all.py
+powerbi/data/
+
+# Claude Code files stay on this machine only
+.claude/
+CLAUDE.md
+CLAUDE.local.md

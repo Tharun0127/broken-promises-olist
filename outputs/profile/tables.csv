@@ -1,0 +1,12 @@
+table,rows,primary_key,distinct_keys,duplicate_key_rows,exact_duplicate_rows
+orders,99441,order_id,99441,0,0
+order_items,112650,"order_id, order_item_id",112650,0,0
+customers,99441,customer_id,99441,0,0
+order_reviews,99224,"review_id, order_id",99224,0,0
+order_payments,103886,"order_id, payment_sequential",103886,0,0
+products,32951,product_id,32951,0,0
+sellers,3095,seller_id,3095,0,0
+category_translation,71,category_pt,71,0,0
+geolocation,1000163,"zip_prefix, lat, lng",720154,280009,261831
+mql,8000,mql_id,8000,0,0
+closed_deals,842,mql_id,842,0,0
