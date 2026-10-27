@@ -43,6 +43,14 @@ Olist test to fix it?
 customer, with survey timing held the same in both arms. It needs **{{exp_n_per_arm|int}} late orders per arm,
 about {{exp_months|num1}} months**. Separately, stop sending the review survey before the parcel arrives.
 
+## Why this question matters
+
+A delivery date shown at checkout is a promise. {{late_rate|pct}} of Olist's delivered orders broke it. The
+obvious response is "deliver faster", which is expensive. Before spending on logistics, a business needs to
+know three things: how much a late delivery actually hurts, where in the delay the damage happens, and
+whether a cheaper fix (better communication) could recover some of it. This project answers the first two
+from data and designs the test for the third.
+
 ## Limitations
 
 Read these before the results. They are the questions a careful reviewer should ask.
@@ -59,6 +67,36 @@ Read these before the results. They are the questions a careful reviewer should 
 - **Historic data** ({{data_start}} to {{data_end}}). The all-time repeat rate is a lower bound; the 180-day rate and
   cohort curves use only fully observed customers and months.
 - **The A/B test is a design.** Nothing was run.
+
+## Judgement calls
+
+The decisions that shaped the result, and why. Each one is logged with alternatives in
+[DECISIONS.md](docs/DECISIONS.md).
+
+1. **Customer = `customer_unique_id`, not `customer_id`.** The dataset has {{orders_raw|int}} `customer_id` values,
+   one per order, for {{customers|int}} people with a delivered order. Using the obvious key would make every
+   customer a one-time buyer and the repeat rate zero by construction.
+2. **Lateness measured in whole calendar days.** The estimate is a date, not a time. A parcel arriving in the evening
+   on the promised day kept its promise; fractional days would have called it late and moved the cutoff.
+3. **Two estimates shown, not one picked.** The local linear RD ({{rd_one_star_estimate|pp}}) and the day 1 vs
+   day 0 comparison ({{rd_one_star_adjacent_estimate|pp}}) answer slightly different questions when the curve
+   bends sharply. Reporting only the more dramatic number would have been easy and wrong.
+4. **Censoring handled, not ignored.** Customers acquired near the end of the data have had no time to return.
+   Unobservable cohort cells are left empty, and rates use only fully observed windows.
+5. **1-star rate, not repeat purchase, as the experiment's primary metric.** Repeat purchase is the outcome the
+   business cares about most, but detecting a realistic change would need {{exp_n_per_arm_repeat|int}} first
+   orders per arm. A test that cannot finish is not a plan.
+6. **A small money number reported as small.** The worst case is {{size_loss_high_all_late|brl}} a quarter. The
+   memo says so and redirects attention to reviews, rather than stretching assumptions to make the number bigger.
+
+## What surprised me
+
+I expected a sharp jump in bad reviews the moment an order became late. There was none once the trend was
+modelled. The rise starts on day 1 and steepens on day 3, and day 3 is when Olist's review survey starts
+reaching late customers before their parcel does ({{review_before_delivery_day2|pct}} on day 2,
+{{review_before_delivery_day3|pct}} on day 3). Part of what looks like delivery damage is a measurement choice:
+asking customers to rate an order they do not have yet. That turned a logistics question into a much cheaper
+recommendation.
 
 ---
 
@@ -179,12 +217,24 @@ powerbi/           measures.dax and the build guide (CSVs are generated into pow
 notebooks/         executed walkthrough notebook
 ```
 
+## What I would do next
+
+With access inside Olist, these would close the gaps this public data leaves open:
+
+- **Run the delay-message test** and read the 1-star rate after the planned sample, not before.
+- **Get checkout data** to measure what a padded delivery estimate costs in conversion. That would decide
+  between "promise later" and "communicate better".
+- **Join review scores to later seller sales** to put a money value on a bad review, the cost this data cannot price.
+- **Add commission rates** to turn order value into Olist revenue.
+- **Look at lateness by seller and carrier**, not only by state, to find the few routes behind most 3+ day delays.
+
 ## Further reading
 
 - [Memo](docs/memo.md): the answer and three ranked, sized recommendations on one page.
 - [RD results](docs/promise_gap_results.md): every estimate, check and table.
 - [Experiment design](docs/experiment_design.md): hypothesis, unit, metrics, power, pitfalls.
-- [Interview prep](docs/INTERVIEW_PREP.md): how each part works, line by line, and where it is weak.
+- [Technical deep dive](docs/INTERVIEW_PREP.md): how each part works, line by line, likely questions, and
+  where the analysis is weakest.
 
 ---
 
