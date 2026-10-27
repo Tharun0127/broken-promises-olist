@@ -97,12 +97,9 @@
   },
   {
     "check": "numbers in README.md traced to outputs/metrics.json",
-    "n": 86,
-    "unknown": [
-      "1,",
-      "3,"
-    ],
-    "passed": false
+    "n": 87,
+    "unknown": [],
+    "passed": true
   },
   {
     "check": "style in README.md (no em-dash, no emoji)",
@@ -112,13 +109,22 @@
   {
     "check": "numbers in memo.md traced to outputs/metrics.json",
     "n": 38,
-    "unknown": [
-      "1,"
-    ],
-    "passed": false
+    "unknown": [],
+    "passed": true
   },
   {
     "check": "style in memo.md (no em-dash, no emoji)",
+    "n": 0,
+    "passed": true
+  },
+  {
+    "check": "numbers in INTERVIEW_PREP.md traced to outputs/metrics.json",
+    "n": 182,
+    "unknown": [],
+    "passed": true
+  },
+  {
+    "check": "style in INTERVIEW_PREP.md (no em-dash, no emoji)",
     "n": 0,
     "passed": true
   }
