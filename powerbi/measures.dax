@@ -1,0 +1,131 @@
+// =====================================================================
+// The Promise Gap: DAX measures
+// Create a blank table called _Measures and add each measure to it.
+// Table and column names match the CSVs in powerbi/data/.
+// Every measure is checked against outputs/metrics.json in the build guide.
+// =====================================================================
+
+
+// ---------------------------------------------------------------------
+// Page 1: Funnel
+// ---------------------------------------------------------------------
+
+// All orders, any status. The top of the fulfilment funnel.
+Orders = COUNTROWS ( fact_orders )
+
+// Stage counts use the cumulative flags built in SQL: an order that reached
+// a later stage also counts as having reached the earlier ones.
+Approved Orders = CALCULATE ( [Orders], fact_orders[is_approved] = 1 )
+Shipped Orders = CALCULATE ( [Orders], fact_orders[is_shipped] = 1 )
+Delivered Orders = CALCULATE ( [Orders], fact_orders[is_delivered] = 1 )
+Reviewed Orders = CALCULATE ( [Orders], fact_orders[is_reviewed] = 1 )
+
+// Step conversion: share of the previous stage that reached this one.
+// DIVIDE returns BLANK instead of an error when the denominator is zero.
+Conv Purchased to Approved = DIVIDE ( [Approved Orders], [Orders] )
+Conv Approved to Shipped = DIVIDE ( [Shipped Orders], [Approved Orders] )
+Conv Shipped to Delivered = DIVIDE ( [Delivered Orders], [Shipped Orders] )
+Conv Delivered to Reviewed = DIVIDE ( [Reviewed Orders], [Delivered Orders] )
+Conv Purchased to Delivered = DIVIDE ( [Delivered Orders], [Orders] )
+
+// Medians, not means: stage times are heavily right-skewed.
+// Only orders that reached the stage have the duration filled in.
+Median Hours Purchase to Approve = MEDIAN ( fact_orders[hours_purchase_to_approve] )
+Median Hours Approve to Ship = MEDIAN ( fact_orders[hours_approve_to_ship] )
+Median Hours Ship to Deliver = MEDIAN ( fact_orders[hours_ship_to_deliver] )
+
+// Seller funnel comes from an aggregate table (leads are not in the order fact).
+// Use with a slicer on agg_seller_funnel[dimension].
+Seller Leads = SUM ( agg_seller_funnel[n_leads] )
+Seller Closed Deals = SUM ( agg_seller_funnel[n_closed] )
+Seller First Sales = SUM ( agg_seller_funnel[n_first_sale] )
+Seller Still Selling 90d = SUM ( agg_seller_funnel[n_still_selling] )
+Seller Conv Lead to Closed = DIVIDE ( [Seller Closed Deals], [Seller Leads] )
+Seller Conv Closed to First Sale = DIVIDE ( [Seller First Sales], [Seller Closed Deals] )
+// Denominator excludes censored sellers whose 90-day window is not yet observed.
+Seller Conv Still Selling 90d =
+    DIVIDE ( [Seller Still Selling 90d], SUM ( agg_seller_funnel[n_first_sale_observed] ) )
+
+
+// ---------------------------------------------------------------------
+// Page 2: Cohorts
+// ---------------------------------------------------------------------
+
+// Customers = people (customer_unique_id) with at least one delivered order.
+Customers = CALCULATE ( COUNTROWS ( dim_customer ), dim_customer[has_delivered_order] = 1 )
+
+// All-time repeat rate: bought again on a later day, at any point in the data.
+// A lower bound, because recent customers have had little time to return.
+Repeat Rate All Time =
+    DIVIDE (
+        CALCULATE ( COUNTROWS ( dim_customer ), dim_customer[is_repeat_customer] = 1 ),
+        [Customers]
+    )
+
+// Censoring-safe repeat rate: only customers whose 180-day window is fully observed.
+Repeat Rate 180d =
+    DIVIDE (
+        CALCULATE ( COUNTROWS ( dim_customer ), dim_customer[repeat_in_180d] = 1 ),
+        CALCULATE ( COUNTROWS ( dim_customer ), dim_customer[repeat_window_observed] = 1 )
+    )
+
+// Pooled retention for the curve. Only observed cells count, so month 12 is
+// averaged over cohorts that have reached month 12 (the censoring fix).
+Cohort Retention =
+    DIVIDE (
+        CALCULATE ( SUM ( agg_customer_cohorts[active_customers] ), agg_customer_cohorts[is_observed] = TRUE () ),
+        CALCULATE ( SUM ( agg_customer_cohorts[cohort_customers] ), agg_customer_cohorts[is_observed] = TRUE () )
+    )
+
+Seller Activity Rate =
+    DIVIDE (
+        CALCULATE ( SUM ( agg_seller_cohorts[active_sellers] ), agg_seller_cohorts[is_observed] = TRUE () ),
+        CALCULATE ( SUM ( agg_seller_cohorts[cohort_sellers] ), agg_seller_cohorts[is_observed] = TRUE () )
+    )
+
+
+// ---------------------------------------------------------------------
+// Page 3: Promise Gap
+// ---------------------------------------------------------------------
+
+// Late = delivered at least one calendar day after the estimated date.
+Late Orders = CALCULATE ( [Orders], fact_orders[is_late] = 1 )
+Late Rate = DIVIDE ( [Late Orders], [Delivered Orders] )
+
+// 1-star rate among delivered orders that have a review. one_star is blank
+// when there is no review, so COUNT (non-blank) gives the right denominator.
+One Star Rate =
+    DIVIDE (
+        CALCULATE ( COUNTROWS ( fact_orders ), fact_orders[one_star] = 1 ),
+        COUNT ( fact_orders[one_star] )
+    )
+
+Avg Review Score = AVERAGE ( fact_orders[review_score] )
+
+// Share of reviews whose survey was sent before the parcel arrived.
+Review Before Delivery Rate =
+    DIVIDE (
+        CALCULATE ( COUNTROWS ( fact_orders ), fact_orders[review_before_delivery] = 1 ),
+        COUNT ( fact_orders[review_before_delivery] )
+    )
+
+// Repeat within 180 days on first orders with a full window (blank otherwise).
+First Order Repeat Rate 180d = AVERAGE ( fact_orders[repeat_180] )
+
+// RD estimates are computed in Python; show them from the results table.
+// Filter agg_rd_results[outcome] and agg_rd_results[spec] with slicers.
+RD Estimate = SELECTEDVALUE ( agg_rd_results[estimate] )
+RD CI Low = SELECTEDVALUE ( agg_rd_results[ci_low] )
+RD CI High = SELECTEDVALUE ( agg_rd_results[ci_high] )
+
+
+// ---------------------------------------------------------------------
+// Page 4: Experiment Plan
+// ---------------------------------------------------------------------
+
+// Sample size for the selected minimum detectable effect (from the power table).
+Required Orders Per Arm = SELECTEDVALUE ( agg_experiment_power[n_per_arm] )
+Months Needed = SELECTEDVALUE ( agg_experiment_power[months_at_measured_volume] )
+
+// Business sizing scenarios (order value per quarter, R$).
+Repeat Value Lost Per Quarter = SUM ( agg_sizing[loss_per_quarter] )
