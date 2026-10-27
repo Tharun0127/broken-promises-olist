@@ -13,7 +13,11 @@ def connect(path=None):
     target = str(path or config.DB_PATH)
     if target != ":memory:":
         Path(target).parent.mkdir(parents=True, exist_ok=True)
-    return duckdb.connect(target)
+    con = duckdb.connect(target)
+    # One thread makes floating-point sums run in a fixed order, so a rebuild
+    # reproduces outputs byte for byte. The data is small enough not to need more.
+    con.execute("set threads = 1")
+    return con
 
 
 def register_raw(con, raw_dir=None):

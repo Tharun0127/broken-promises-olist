@@ -93,4 +93,4 @@ select
     median_days_close_to_first_sale
 from aggregated
 where not (dimension = 'business_segment' and dimension_value = 'not_closed')
-order by dimension, n_closed desc;
+order by dimension, n_closed desc, dimension_value;
